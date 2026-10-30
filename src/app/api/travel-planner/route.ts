@@ -1,4 +1,5 @@
 type TravelRequest = {
+  apiKey?: unknown;
   destination?: unknown;
   days?: unknown;
   budget?: unknown;
@@ -73,6 +74,7 @@ export async function POST(request: Request) {
   }
 
   const destination = typeof input.destination === "string" ? input.destination.trim() : "";
+  const apiKey = typeof input.apiKey === "string" ? input.apiKey.trim() : "";
   const days = Number(input.days);
   const budget = Number(input.budget);
   const pace = typeof input.pace === "string" ? input.pace : "步調適中";
@@ -104,9 +106,8 @@ export async function POST(request: Request) {
     return Response.json({ error: "請輸入有效的旅費預算。" }, { status: 400 });
   }
 
-  const apiKey = process.env.OPENAI_API_KEY;
-  if (!apiKey) {
-    return Response.json({ error: "尚未設定 OPENAI_API_KEY，請在伺服器環境變數中設定後再試。" }, { status: 503 });
+  if (!apiKey || apiKey.length > 500) {
+    return Response.json({ error: "請先輸入有效的 OpenAI API Key。" }, { status: 400 });
   }
 
   try {
@@ -114,8 +115,7 @@ export async function POST(request: Request) {
       method: "POST",
       headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
       body: JSON.stringify({
-        model: process.env.OPENAI_MODEL || "gpt-4o-mini",
-        reasoning_effort: "low",
+        model: "gpt-4o-mini",
         response_format: {
           type: "json_schema",
           json_schema: { name: "travel_itinerary", strict: true, schema: itinerarySchema },
@@ -135,8 +135,19 @@ export async function POST(request: Request) {
     });
 
     if (!completion.ok) {
-      console.error("OpenAI itinerary request failed:", completion.status, await completion.text());
-      return Response.json({ error: "行程服務暫時忙碌，請稍後再試。" }, { status: 502 });
+      const errorBody = await completion.json().catch(() => null);
+      const upstreamMessage = typeof errorBody?.error?.message === "string"
+        ? errorBody.error.message.replaceAll(apiKey, "[redacted]").slice(0, 240)
+        : "";
+      console.error("OpenAI itinerary request failed:", completion.status, upstreamMessage);
+      const message = completion.status === 400 && upstreamMessage
+        ? `OpenAI 請求設定錯誤：${upstreamMessage}`
+        : completion.status === 401
+        ? "OpenAI API Key 無效，請檢查金鑰後再試。"
+        : completion.status === 429
+          ? "OpenAI API 額度不足或目前請求過多，請檢查帳戶額度後再試。"
+          : "行程服務暫時忙碌，請稍後再試。";
+      return Response.json({ error: message }, { status: 502 });
     }
 
     const result = await completion.json();

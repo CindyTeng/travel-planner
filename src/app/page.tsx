@@ -62,6 +62,19 @@ export default function Home() {
   const [revisionLoading, setRevisionLoading] = useState(false);
   const [revisionError, setRevisionError] = useState("");
   const [error, setError] = useState("");
+  const [apiKey, setApiKey] = useState("");
+  const [apiKeyLoaded, setApiKeyLoaded] = useState(false);
+
+  useEffect(() => {
+    setApiKey(window.localStorage.getItem("tripmate.openaiApiKey") || "");
+    setApiKeyLoaded(true);
+  }, []);
+
+  function updateApiKey(value: string) {
+    setApiKey(value);
+    if (value.trim()) window.localStorage.setItem("tripmate.openaiApiKey", value.trim());
+    else window.localStorage.removeItem("tripmate.openaiApiKey");
+  }
 
   useEffect(() => {
     const timer = window.setInterval(() => setActiveSlide((current) => (current + 1) % heroSlides.length), 5000);
@@ -77,7 +90,7 @@ export default function Home() {
     setError(""); setPlan(null); setRevisionRequest(""); setRevisionError(""); setLoading(true);
     const requestData = { destination, days, budget, pace, interests: selected, customActivities, arrivalTime, returnTime };
     try {
-      const response = await fetch("/api/travel-planner", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(requestData) });
+      const response = await fetch("/api/travel-planner", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...requestData, apiKey: apiKey.trim() }) });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "行程暫時無法生成，請稍後再試。");
       setPlan(data); setPlanInputs(requestData);
@@ -92,7 +105,7 @@ export default function Home() {
     if (!plan || !request || revisionLoading) return;
     setRevisionError(""); setRevisionLoading(true);
     try {
-      const response = await fetch("/api/travel-planner", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...(planInputs || { destination, days, budget, pace, interests: selected, customActivities, arrivalTime, returnTime }), currentPlan: plan, revisionRequest: request }) });
+      const response = await fetch("/api/travel-planner", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...(planInputs || { destination, days, budget, pace, interests: selected, customActivities, arrivalTime, returnTime }), apiKey: apiKey.trim(), currentPlan: plan, revisionRequest: request }) });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "行程暫時無法更新，請稍後再試。");
       setPlan(data); setRevisionRequest("");
@@ -134,6 +147,11 @@ export default function Home() {
         <div className="planner-layout">
           <form className="planner-card" onSubmit={handleSubmit}>
             <div className="form-topline"><span>行程設定</span><span>01 — 你的旅行偏好</span></div>
+            <div className="api-key-field">
+              <label className="field-label" htmlFor="openai-api-key">OpenAI API Key</label>
+              <input id="openai-api-key" className="destination-input" type="password" autoComplete="off" spellCheck={false} placeholder="sk-…" value={apiKey} onChange={(event) => updateApiKey(event.target.value)} disabled={!apiKeyLoaded} required />
+              <p>金鑰會保存在這個瀏覽器的 localStorage，並在產生或修改行程時傳送給 OpenAI。請勿在共用裝置使用。</p>
+            </div>
             <label className="field-label" htmlFor="destination">01 <span>想去的地方</span></label>
             <input id="destination" className="destination-input" value={destination} onChange={(event) => setDestination(event.target.value)} placeholder="例如：日本・京都" required maxLength={80} />
             <div className="form-divider" />
